@@ -15,6 +15,7 @@ var connectString = os.Getenv("DATABASE_CONNECTION_STRING")
 var user = os.Getenv("DATABASE_USERNAME")
 var password = os.Getenv("DATABASE_PASSWORD")
 var threads = os.Getenv("QUERY_THREADS")
+var usePooling = os.Getenv("USE_POOLING")
 var queryString = `
 SELECT
     dt.tablespace_name as tablespace,
@@ -75,10 +76,16 @@ func getDB() *sql.DB {
 		Valid: true,
 	}
 
+	if ok, _ := strconv.ParseBool(usePooling); ok {
+		P.PoolParams.SessionIncrement = 3
+		P.PoolParams.MaxSessions = 10
+		P.PoolParams.MinSessions = 1
+	}
+
 	P.PoolParams.WaitTimeout = time.Second * 5
 	db := sql.OpenDB(godror.NewConnector(P))
 	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(0)
+	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(0)
 	return db
 }

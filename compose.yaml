@@ -22,6 +22,7 @@ services:
       - DATABASE_USERNAME=pdbadmin
       - DATABASE_PASSWORD=Welcome12345
       - QUERY_THREADS=100
+      - USE_POOLING=true
     depends_on:
       oracle23ai:
         condition: service_healthy
