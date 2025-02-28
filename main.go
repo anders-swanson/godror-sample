@@ -15,7 +15,28 @@ var connectString = os.Getenv("DATABASE_CONNECTION_STRING")
 var user = os.Getenv("DATABASE_USERNAME")
 var password = os.Getenv("DATABASE_PASSWORD")
 var threads = os.Getenv("QUERY_THREADS")
-var queryString = "SELECT BANNER, BANNER_FULL FROM v$version"
+var queryString = `
+SELECT
+    dt.tablespace_name as tablespace,
+    dt.contents as type,
+    dt.block_size * dtum.used_space as bytes,
+    dt.block_size * dtum.tablespace_size as max_bytes,
+    dt.block_size * (dtum.tablespace_size - dtum.used_space) as free,
+    dtum.used_percent
+FROM  dba_tablespace_usage_metrics dtum, dba_tablespaces dt
+WHERE dtum.tablespace_name = dt.tablespace_name
+and dt.contents != 'TEMPORARY'
+union
+SELECT
+    dt.tablespace_name as tablespace,
+    'TEMPORARY' as type,
+    dt.tablespace_size - dt.free_space as bytes,
+    dt.tablespace_size as max_bytes,
+    dt.free_space as free,
+    ((dt.tablespace_size - dt.free_space) / dt.tablespace_size)
+FROM  dba_temp_free_space dt
+order by tablespace
+`
 
 func main() {
 	db := getDB()
@@ -25,25 +46,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Starting %d query threads\n", numThreads)
-	ch := make(chan error, numThreads)
-	for i := 0; i < numThreads; i++ {
-		go query(ch, db, queryString)
-	}
-
-	hasErr := false
-	for i := 0; i < numThreads; i++ {
-		queryErr := <-ch
-		if queryErr != nil {
-			fmt.Printf("Query error from thread %d: %v\n", i, queryErr)
-			hasErr = true
+	for z := 0; ; z++ {
+		fmt.Printf("Starting %d query threads\n", numThreads)
+		ch := make(chan error, numThreads)
+		for i := 0; i < numThreads; i++ {
+			go query(ch, db, queryString)
 		}
+
+		for i := 0; i < numThreads; i++ {
+			queryErr := <-ch
+			if queryErr != nil {
+				fmt.Printf("Query error from thread %d: %v\n", i, queryErr)
+				os.Exit(1)
+			}
+		}
+		close(ch)
+		fmt.Printf("iteration %d\n", z)
 	}
-	close(ch)
-	if !hasErr {
-		fmt.Println("All query threads completed without error")
-	}
-	fmt.Println("Done!")
 }
 
 func getDB() *sql.DB {
