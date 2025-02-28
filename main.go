@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/godror/godror"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -77,16 +78,28 @@ func getDB() *sql.DB {
 	}
 
 	if ok, _ := strconv.ParseBool(usePooling); ok {
+		fmt.Println("Using OCI Connection Pooling")
+		P.PoolParams.WaitTimeout = time.Second * 5
 		P.PoolParams.SessionIncrement = 3
-		P.PoolParams.MaxSessions = 10
-		P.PoolParams.MinSessions = 1
+		P.PoolParams.MaxSessions = 100
+		P.PoolParams.MinSessions = 10
+		P.StandaloneConnection = sql.NullBool{
+			Bool:  false,
+			Valid: true,
+		}
 	}
 
-	P.PoolParams.WaitTimeout = time.Second * 5
 	db := sql.OpenDB(godror.NewConnector(P))
 	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(10)
+	db.SetMaxIdleConns(0)
 	db.SetConnMaxLifetime(0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := db.PingContext(ctx)
+	if err != nil {
+		log.Fatalf("Failed to ping DB: %v", err)
+	}
 	return db
 }
 
